@@ -1,18 +1,13 @@
 <?
 require('SimpleXLSXGen.php');
 
-// Данные с API прилетают в JSONe, не забываем декодить
-
-// Вызываем, только если отправлен токен
 if (isset($_POST['token'])) {
 
-  // Получаем данные пользователя
   $ch = curl_init();
   curl_setopt($ch, CURLOPT_URL,"https://api.dtf.ru/v1.8/user/me");
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
   curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET"); 
   
-  // Добавлятем к заголовку токен, т.к этого требует API
   $headers = [
       'X-Device-Token: '.$_POST['token'].'',
       'User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:28.0) Gecko/20100101 Firefox/28.0'
@@ -23,67 +18,16 @@ if (isset($_POST['token'])) {
   $user_info = curl_exec ($ch);
   
   curl_close ($ch);
+
   if (isset(json_decode($user_info)->result->id)) {
-    $userid = json_decode($user_info)->result->id;
-    $fav = json_decode($user_info)->result->counters->favorites;
+    $result = json_decode($user_info)->result;
 
-    $file = './lists/'.time().'.xlsx';
-
-    // Генерируем xlsx файл - https://github.com/shuchkin/simplexlsxgen
-    $cc = 0;
-
-    $sheet_data = [['<b>ID</b>', '<b>Link</b>', '<b>Title</b>' ,'<b>Subsite</b>' ,'<b>Author</b>', '<b>Favorite Date</b>', '<b>Post Date</b>', '<b>Likes</b>', '<b>Comments</b>' ]];
-    $top_subsite = [];
-    $top_author = [];
-
-    // Так как максимальный лимит по записям на пользовтеля 50 штук, вешаем запрос в цикл
-    for ($i = 0; $i <= round($fav / 50); $i++) {
-      $ch = curl_init();
-      curl_setopt($ch, CURLOPT_URL,"https://api.dtf.ru/v1.8/user/".$userid."/favorites/entries?count=50&offset=".$i*50);
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET"); 
-      
-      $headers = [
-          'X-Device-Token: '.$_POST['token'].'',
-          'User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:28.0) Gecko/20100101 Firefox/28.0'
-      ];
-      
-      curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-      
-      $server_output = curl_exec ($ch);
-      
-      curl_close ($ch);
-
-      // Генерируем строки и добавляем в наш файл
-      foreach (json_decode($server_output) as $out) {
-          if (count((array)$out) > 1) {
-              foreach ($out as $element) {
-                $data = [$element->id, $element->url, $element->title, '<a href="'.$element->subsite->url.'">'.$element->subsite->name.'</a>', '<a href="'.$element->author->url.'">'.$element->author->name.'</a>', date('d.m.Y H:i:s', $element->date_favorite), date('d.m.Y H:i:s', $element->date), $element->likes->count, $element->commentsCount];
-                array_push($sheet_data, $data);
-
-                if (isset($top_subsite[$element->subsite->id])) {
-                  $top_subsite[$element->subsite->id]['count'] = $top_subsite[$element->subsite->id]['count'] + 1;
-                } else {
-                  $top_subsite += array($element->subsite->id => ['count' => 1, 'name' => $element->subsite->name, 'link' => $element->subsite->url]);
-                }
-
-                if (isset($top_author[$element->author->id])) {
-                  $top_author[$element->author->id]['count'] = $top_author[$element->author->id]['count'] + 1;
-                } else {
-                  $top_author += array($element->author->id => ['count' => 1, 'name' => $element->author->name, 'link' => $element->author->url]);
-                }
-
-                $cc += 1;
-              }
-          }
-      }
-    }
-
-    // Сортировка по убыванию, для топа подсайтов и авторов
-    array_multisort($top_subsite, SORT_DESC, $top_subsite);
-    array_multisort($top_author, SORT_DESC, $top_author);
-
-    SimpleXLSXGen::fromArray( $sheet_data )->saveAs($file);
+    $username = $result->name;
+    $avatar = $result->avatar_url;
+    $karma = $result->karma;
+    $posts = $result->counters->entries;
+    $comments = $result->counters->comments;
+    $favorites = $result->counters->favorites;
   }
 
 }
@@ -125,7 +69,7 @@ if (isset($_POST['token'])) {
         align-items: center;
         padding-top: 40px;
         padding-bottom: 40px;
-        background-color: #f5f5f5;
+        background-color: #2f3032;
       }
 
       .form-signin {
@@ -161,7 +105,7 @@ if (isset($_POST['token'])) {
     <?php if (!isset($_POST['token'])) { ?>
     <form action="#" method="POST">
       <img class="mb-4" src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/DTF_logo.svg/1200px-DTF_logo.svg.png" alt="" width="150" height="50">
-      <h1 class="h3 mb-3 fw-normal">Парсер закладок</h1>
+      <h1 class="h3 mb-3 fw-normal text-white">Парсер закладок</h1>
 
       <div class="form-floating">
         <input type="text" name="token" class="form-control" id="floatingInput" placeholder="">
@@ -174,33 +118,89 @@ if (isset($_POST['token'])) {
     </form>
     <? } else { ?>
       <form>
-        <p>Найдено <b><?php echo $cc ?></b> закладок</p>
-        <div class="card">
-          <div class="card-body">
-            <div class="container">
-                <div class="row">
-                    <div class="col" style="text-align: left;">
-                      <b>Топ подсайтов</b>
-                      <br><br>
-                        <?php for ($i = 0; $i < min(5, count($top_subsite)); $i++) { ?>
-                          <p><small><a href="<?php echo $top_subsite[$i]['link'] ?>"><?php echo $top_subsite[$i]['name'] ?></a> - <b><?php echo $top_subsite[$i]['count'] ?></b></small></p>
-                        <?php } ?>
-                    </div>
-                    <div class="col" style="text-align: left;">
-                      <b>Топ авторов</b>
-                      <br><br>
-                        <?php for ($i = 0; $i < min(5, count($top_author)); $i++) { ?>
-                          <p><small><a href="<?php echo $top_author[$i]['link'] ?>"><?php echo $top_author[$i]['name'] ?></a> - <b><?php echo $top_author[$i]['count'] ?></b></small></p>
-                        <?php } ?>
-                    </div>
-                </div>
-              </div>
+      <div class="card text-white bg-dark mb-3">
+        <div class="card-header"><?php echo $username ?></div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-3">
+              <img src="<?php echo $avatar ?>" class="img-thumbnail">
             </div>
+            <div class="col-9" style="text-align: left;">
+              <p class="card-text">
+                <b>Постов:</b> <?php echo $posts ?> <br>
+                <b>Комментариев:</b> <?php echo $comments ?> <br>
+                <b>Закладки:</b> <?php echo $favorites ?> <br>
+                <hr>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="" id="posts">
+                  <label class="form-check-label" for="posts">
+                    Экспортировать посты
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="" id="comments">
+                  <label class="form-check-label" for="comments">
+                    Экспортировать комментарии
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="" id="favorites">
+                  <label class="form-check-label" for="favorites">
+                    Экспортировать закладки
+                  </label>
+                </div>
+              </p>
+            </div>
+          </div>
+          <hr>
+          <button type="button" id="generate" class="btn btn-success">Сгенерировать файл</button>
+          <div id="generating" class="alert alert-warning" role="alert" style="display: none;">
+            Генерация файла началась, она может занять <b>от 2 до 30 минут</b>, взависимости от вашего кол-ва данных.<br><br>
+            Пожалуйста, не закрывайте страницу и дождитесь появления кнопки для загрузки данных.<br>
+            <img src="https://mir-s3-cdn-cf.behance.net/project_modules/max_632/04de2e31234507.564a1d23645bf.gif" style="width: 80px;">
+          </div>
+          <div id="suc" class="alert alert-success" role="alert" style="display: none;">
+            Генерация файла завершена
+          </div>
+          <a href="/" id="link" style="display: none"><button type="button" class="btn btn-primary">Скачать файл</button></a>
         </div>
-        <hr>
-        <a href="<?php echo $file ?>" download>Скачать список</a>
+      </div>
+
       </form>
     <? } ?>
   </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+
+  <?php if (isset($_POST['token'])) { ?>
+  <script>
+    $( "#generate" ).click(function() {
+      var posts  =$('#posts').is(":checked");
+      var comments  =$('#comments').is(":checked");
+      var favorites  =$('#favorites').is(":checked");
+
+      $('#generate').css('display', 'none');
+      $('#generating').css('display', 'block');
+
+      axios.post('/engine.php', {
+        posts: posts,
+        comments: comments,
+        favorites: favorites,
+        token: '<?php echo $_POST['token'] ?>'
+      })
+      .then(function (response) {
+        $('#generating').css('display', 'none');
+        $('#suc').css('display', 'block');
+        $('#link').css('display', 'block');
+        $("#link").attr("href", response.data)
+      })
+      .catch(function (error) {
+        console.log(error);
+      });
+    });
+  </script>
+  <?php } ?>
+
 </body>
 </html>
